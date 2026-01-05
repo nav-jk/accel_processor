@@ -150,3 +150,69 @@ def estimate_trajectory(time, ax, ay, az):
     pz = integrate(vz, time)
 
     return px, py, pz
+
+
+
+def trajectory_stateful(func):
+    state = {
+        "vx": 0.0, "vy": 0.0, "vz": 0.0,
+        "px": 0.0, "py": 0.0, "pz": 0.0,
+        "mean_ax": 0.0, "mean_ay": 0.0, "mean_az": 0.0,
+        "count": 1
+    }
+
+    def wrapper(ax, ay, az, dt):
+        nonlocal state
+
+        ax -=  state["mean_ax"]
+        ay -= state["mean_ay"]
+        az -= state["mean_az"]
+
+        px, py, pz, vx, vy, vz = func(
+            ax, ay, az,
+            state["vx"], state["vy"], state["vz"],
+            state["px"], state["py"], state["pz"],
+            dt
+        )
+
+        mean_ax, mean_ay, mean_az = state['mean_ax'], state["mean_ay"], state["mean_az"]
+
+        mean_ax, mean_ay, mean_az = (ax + mean_ax * state["count"]) / state["count"] , (ay + mean_ay * state["count"]) / state["count"], (az + mean_az * state["count"]) / state["count"]
+
+
+        state.update({
+            "vx": vx, "vy": vy, "vz": vz,
+            "px": px, "py": py, "pz": pz,
+            "count": state["count"] + 1, 
+        })
+
+        return px, py, pz, vx, vy, vz
+
+    # Optional reset hook (important for experiments)
+    def reset():
+        state.update({
+            "vx": 0.0, "vy": 0.0, "vz": 0.0,
+            "px": 0.0, "py": 0.0, "pz": 0.0,
+        })
+
+    wrapper.reset = reset
+    return wrapper
+
+
+@trajectory_stateful
+def estimate_trajectory_for_queue(
+    ax, ay, az,
+    prev_vx, prev_vy, prev_vz,
+    prev_px, prev_py, prev_pz,
+    dt
+):
+    vx = ax * dt + prev_vx
+    vy = ay * dt + prev_vy
+    vz = az * dt + prev_vz
+
+    px = vx * dt + prev_px
+    py = vy * dt + prev_py
+    pz = vz * dt + prev_pz
+
+    return px, py, pz, vx, vy, vz
+

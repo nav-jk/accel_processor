@@ -1,41 +1,60 @@
-IP = "172.21.11.52"
-PORT = 8080
-ARGS = "/sensor/connect?type=android.sensor.accelerometer"
-
-#!/usr/bin/env python
-"""Client using the asyncio API."""
-
+#!/usr/bin/env python3
 import asyncio
 import json
 import websockets
 
-queue = asyncio.Queue(maxsize=100)
 
-async def receiver(uri):
-    async with websockets.connect(uri) as ws:
-        while True:
-            msg = await ws.recv()
-            data = json.loads(msg)
-            await queue.put(data)  # fast handoff
+class AccelerometerStream:
+    """
+    Real-time WebSocket accelerometer stream.
+    One network task, async-safe consumer interface.
+    """
 
-async def processor():
-    while True:
-        data = await queue.get()
+    def __init__(self, ip, port, args, queue_size=200):
+        self.uri = f"ws://{ip}:{port}{args}"
+        self.queue = asyncio.Queue(maxsize=queue_size)
+        self._receiver_task = None
+        self._running = False
 
-        # Example processing
-        # sensor = data.get("sensor")
-        sensor_read_out = data.get("values")
-        print(f"Processing {sensor_read_out[0]}")
+    async def _receiver(self):
+        """Internal task: receives data from WebSocket."""
+        async with websockets.connect(self.uri) as ws:
+            self._running = True
+            while self._running:
+                msg = await ws.recv()
+                data = json.loads(msg)
 
-        queue.task_done()
+                # Drop oldest data if queue is full (real-time behavior)
+                if self.queue.full():
+                    _ = self.queue.get_nowait()
+                    self.queue.task_done()
 
-async def main():
-    uri = f"ws://{IP}:{PORT}{ARGS}"
-    print(uri)
-    await asyncio.gather(
-        receiver(uri),
-        processor(),
-    )
+                await self.queue.put(data)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    async def start(self):
+        """
+        Start the WebSocket receiver task.
+        Call this ONCE from the owning event loop.
+        """
+        if self._receiver_task is None:
+            self._receiver_task = asyncio.create_task(self._receiver())
+
+    async def stop(self):
+        """Gracefully stop the receiver."""
+        self._running = False
+        if self._receiver_task:
+            self._receiver_task.cancel()
+            try:
+                await self._receiver_task
+            except asyncio.CancelledError:
+                pass
+
+    async def get(self):
+        """
+        Get the next sensor sample.
+        This blocks until new data arrives.
+        """
+        return await self.queue.get()
+
+    def empty(self):
+        return self.queue.empty()
