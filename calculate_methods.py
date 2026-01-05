@@ -52,6 +52,7 @@ def compute_vector_displacement(time, ax, ay, az):
     # Sampling frequency
     dt = np.mean(np.diff(time))
     fs = 1.0 / dt
+    print(f"Fs = {fs}")
 
     # ---- Bias removal ----
     ax = ax - np.mean(ax)
