@@ -24,8 +24,8 @@ async def processor():
 
         # Example processing
         # sensor = data.get("sensor")
-        sensor_read_in = data.get("values")
-        print(f"Processing {sensor_read_in[0]}")
+        sensor_read_out = data.get("values")
+        print(f"Processing {sensor_read_out[0]}")
 
         queue.task_done()
 
